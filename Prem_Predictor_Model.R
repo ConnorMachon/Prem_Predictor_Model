@@ -6,7 +6,7 @@
 
 # Bring data into Global Env & reformat (remove 1st row & set 2nd row as headers)
 library(readxl)
-prem_data <- read_excel("C:/Users/Connor Machon/Downloads/sportsref_download.xlsx", 
+prem_data <- read_excel("", 
                         skip = 1)
 ### Note: not the prettiest, fix later
 
