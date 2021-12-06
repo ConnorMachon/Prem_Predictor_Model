@@ -8,13 +8,13 @@ library("pals") # colors
 library(ggplot2)
 
 ########################################
-## run the functions!
+## use the functions!
 #######################################
 
 df <- create_df()
 df <- xg_calculations()
 df <- adjustments()
-Poisson_scorelines(14, "Norwich City")
+Poisson_scorelines(14, "Norwich City") # Change for whichever gameweek & Home team you want to predict
 
 #######################################
 ## Loading and Formatting Data
@@ -24,7 +24,7 @@ Poisson_scorelines(14, "Norwich City")
 ## Ensure 'prem_mw' file is updated from...
 ## 'https://fbref.com/en/comps/9/schedule/Premier-League-Scores-and-Fixtures'
 
-file <- "" # set file location
+file <- "C:/Users/Connor Machon/OneDrive - The University of Texas at Austin/Personal/Prem_Predictor/prem_mw.xlsx"
 matches <- read_excel(file, sheet = "fbref_mw", range = cell_cols("A:Q"))
   
 create_df <- function() {
@@ -195,28 +195,31 @@ adjustments <- function() {
   # Timing adjustment: I'm taking the same code I used to make the xG calculations
   # ... and calculating for the last 4 games played. I avg the old & new #'s
   # ... and then set as the new att/def strengths
+  prev_mws <- 8 # how many recent gameweeks to consider as 'recent form'
+  form_weight <- .98 # weight of 'recent form' as compared to season performance
+  
   for (i in 21:length(df$Wk)) {
     mp <- df$MP[i] # get the match number of the record (MP = mw - games delayed)
     team <- df$Team[i] # get the team of the record
     opp <- df$Opponent[i] # get the opponent of the record
-    
+
     sub <- subset(df, MP < mp)
     league_avg_g <- mean(sub$G, na.rm = TRUE) # League avg Goals
-    
-    sub <- subset(df, MP < mp & MP > (mp-5) & Team==team) # home team LAST 4 GAMES
-    att_strength_t <- sum(sub$G, na.rm = TRUE)/4/league_avg_g # Home team att strength
-    def_strength_t <- sum(sub$GA, na.rm = TRUE)/4/league_avg_g # Home team def strength
-    
-    sub <- subset(df, MP < mp & MP > (mp-5) & Team==opp) # new subset of just records for the away (opp) team
-    att_strength_o <- sum(sub$G, na.rm = TRUE)/4/league_avg_g # Away team att strength
-    def_strength_o <- sum(sub$GA, na.rm = TRUE)/4/league_avg_g # Away team def strength
-    
+
+    sub <- subset(df, MP < mp & MP >= (mp-prev_mws) & Team==team) # home team LAST 4 GAMES
+    att_strength_t <- sum(sub$G, na.rm = TRUE)/prev_mws/league_avg_g # Home team att strength
+    def_strength_t <- sum(sub$GA, na.rm = TRUE)/prev_mws/league_avg_g # Home team def strength
+
+    sub <- subset(df, MP < mp & MP >= (mp-prev_mws) & Team==opp) # new subset of just records for the away (opp) team
+    att_strength_o <- sum(sub$G, na.rm = TRUE)/prev_mws/league_avg_g # Away team att strength
+    def_strength_o <- sum(sub$GA, na.rm = TRUE)/prev_mws/league_avg_g # Away team def strength
+
     # add above values to the dataframe
-    df$Team_Att_Strength[i] <- round((df$Team_Att_Strength[i] + att_strength_t)/2, 4)
-    df$Team_Def_Strength[i] <- round((df$Team_Att_Strength[i] + def_strength_t)/2, 4)
-    df$Opp_Att_Strength[i] <- round((df$Team_Att_Strength[i] + att_strength_o)/2, 4)
-    df$Opp_Def_Strength[i] <- round((df$Team_Att_Strength[i] + def_strength_o)/2, 4)
-    
+    df$Team_Att_Strength[i] <- round((df$Team_Att_Strength[i] + att_strength_t*form_weight)/(1+form_weight), 4)
+    df$Team_Def_Strength[i] <- round((df$Team_Att_Strength[i] + def_strength_t*form_weight)/(1+form_weight), 4)
+    df$Opp_Att_Strength[i] <- round((df$Team_Att_Strength[i] + att_strength_o*form_weight)/(1+form_weight), 4)
+    df$Opp_Def_Strength[i] <- round((df$Team_Att_Strength[i] + def_strength_o*form_weight)/(1+form_weight), 4)
+
     # add above values to the dataframe
     df$Team_xG[i] <- round(df$Team_Att_Strength[i]*df$Opp_Def_Strength[i]*league_avg_g, 4)
     df$Opp_xG[i] <- round(df$Opp_Att_Strength[i]*df$Team_Def_Strength[i]*league_avg_g, 4)
@@ -267,3 +270,40 @@ Poisson_scorelines <- function(mw, team) {
 }
 
 ###############################################################################
+
+
+
+########################################
+## run the functions!
+#######################################
+
+df <- create_df()
+df <- xg_calculations()
+df <- adjustments()
+Poisson_scorelines(14, "Norwich City")
+
+###############################################################################
+
+###############################################################################
+###############################################################################
+
+#########################
+## Optimal timing metrics
+#########################
+z <- data.frame('Prev MWs'=double(), 'Form Weight'=double(), "R Squared"=double())
+for (i in 1:10) {
+  prev_mws <- i
+  for (x in 1:100) {
+    form_weight <- x/100
+    zdf <- create_df()
+    zdf <- xg_calculations()
+    zdf <- adjustments()
+    sub <- subset(zdf, is.na(G)==FALSE & MP > 1)
+    m1 <- lm(G ~ Team_xG, data=sub)
+    z[nrow(z)+1,]<- data.frame(as.double(prev_mws), as.double(form_weight), as.double(summary(m1)$r.squared))
+  }
+}
+max(z$R.Squared)
+# R^2 = 0.08972942
+# prev_mws = 8
+# form_weight = 0.98
